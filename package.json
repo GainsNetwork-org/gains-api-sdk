@@ -1,0 +1,55 @@
+{
+  "name": "@gainsnetwork/api",
+  "version": "0.1.0",
+  "description": "TypeScript client for the Gains Network trading API: typed REST calls generated from the OpenAPI contract, EIP-712 request signing, order tracking and a WebSocket client.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf ./dist",
+    "generate": "openapi-typescript ../../apps/trading-api/openapi/gains-trading-api.v1.json -o src/generated/schema.ts --alphabetize --root-types",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
+  },
+  "dependencies": {
+    "viem": "2.56.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@gains/eslint-config": "file:../eslint-config",
+    "@types/node": "22.20.1",
+    "eslint": "9.39.5",
+    "openapi-typescript": "7.13.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "vitest": "4.1.10"
+  }
+}
