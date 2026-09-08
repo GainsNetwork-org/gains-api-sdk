@@ -1,5 +1,5 @@
 import { stripUndefined } from "./canonicalJson.js";
-import { GainsApiError, type ErrorCode } from "./errors.js";
+import { ERROR_CODES, GainsApiError, type ErrorCode } from "./errors.js";
 import type { RequestSigner } from "./signing.js";
 
 export interface RequestOptions {
@@ -35,8 +35,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set(ERROR_CODES);
+
 function isErrorCode(value: unknown): value is ErrorCode {
-  return typeof value === "string";
+  return typeof value === "string" && KNOWN_ERROR_CODES.has(value);
 }
 
 function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
@@ -64,6 +66,10 @@ export class Transport {
 
   get signer(): RequestSigner | undefined {
     return this.options.signer;
+  }
+
+  get apiKey(): string | undefined {
+    return this.options.apiKey;
   }
 
   chainPath(suffix: string): string {

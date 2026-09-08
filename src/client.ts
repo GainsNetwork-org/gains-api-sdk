@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { GainsApiError } from "./errors.js";
+import { GainsApiError, OrderSubmitReportError } from "./errors.js";
 import { Transport, type RequestOptions } from "./http.js";
 import { TrackedOrder } from "./orders.js";
 import {
@@ -107,9 +107,11 @@ export class GainsClient {
     this.chain = options.chain;
     this.baseUrl =
       options.baseUrl ?? (options.chain === "arbitrum-sepolia" ? TESTNET_URL : MAINNET_URL);
-    const known =
-      options.signingChain ?? (options.baseUrl === undefined ? CHAINS[options.chain] : undefined);
-    if (known !== undefined) this.signingChainPromise = Promise.resolve(known);
+    // Keep the pinned domain for a chain we know, whatever base URL is in use. Reading it from
+    // the endpoint let that endpoint choose which chain id and Diamond the client signs against,
+    // so a signature made for one deployment stayed valid on another.
+    const known = options.signingChain ?? CHAINS[options.chain];
+    this.signingChainPromise = Promise.resolve(known);
     const resolveChain = (): Promise<SigningChain> => this.signingChain();
     const signer =
       options.signer ??
@@ -162,14 +164,13 @@ export class GainsClient {
   }
 
   /** Opens a WebSocket for this chain. Private channels reuse the client's signer or API key. */
-  websocket(
-    options: Omit<GainsWebSocketOptions, "url" | "chain" | "signer" | "apiKey"> = {},
-  ): GainsWebSocket {
+  websocket(options: Omit<GainsWebSocketOptions, "url" | "chain"> = {}): GainsWebSocket {
     const url = `${this.baseUrl.replace(/^http/, "ws")}/v1/${this.chain}/ws`;
     return new GainsWebSocket({
       url,
       chain: this.chain,
       ...(this.transport.signer === undefined ? {} : { signer: this.transport.signer }),
+      ...(this.transport.apiKey === undefined ? {} : { apiKey: this.transport.apiKey }),
       ...options,
     });
   }
@@ -426,7 +427,11 @@ export class OrdersApi {
     const prepared = await this.prepare(request, options);
     if (prepared.transaction === null) return this.track(prepared.order);
     const txHash = await sender.sendTransaction(prepared.transaction);
-    return this.track(await this.submit(prepared.order.id, txHash, options));
+    try {
+      return this.track(await this.submit(prepared.order.id, txHash, options));
+    } catch (error: unknown) {
+      throw new OrderSubmitReportError(prepared.order.id, txHash, error);
+    }
   }
 
   prepareUpdate(

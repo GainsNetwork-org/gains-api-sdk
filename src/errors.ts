@@ -33,7 +33,9 @@ export const ERROR_CODES = [
   "RATE_LIMITED",
   "INTERNAL",
   "UPSTREAM_UNAVAILABLE",
+  "NOT_FOUND",
   "NOT_READY",
+  "TOO_MANY_PREPARED_ORDERS",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -98,5 +100,24 @@ export class FillTimeoutError extends Error {
     super(`order ${orderId} still pending after ${String(timeoutMs)} ms`);
     this.name = "FillTimeoutError";
     this.orderId = orderId;
+  }
+}
+
+/**
+ * The order was broadcast but the API could not be told its hash. The position is opening on
+ * chain: poll `GET /orders/{orderId}` or cancel it, do not re-send the order.
+ */
+export class OrderSubmitReportError extends Error {
+  readonly orderId: string;
+  readonly txHash: string;
+
+  constructor(orderId: string, txHash: string, cause: unknown) {
+    super(
+      `order ${orderId} was broadcast as ${txHash} but reporting it to the API failed; poll or cancel it rather than re-sending`,
+      { cause },
+    );
+    this.name = "OrderSubmitReportError";
+    this.orderId = orderId;
+    this.txHash = txHash;
   }
 }

@@ -15,12 +15,32 @@ Node 20 or newer. On Node 20 pass a WebSocket implementation (`ws`) to `client.w
 
 ## Quick start
 
+The agent signs API requests **and** broadcasts the transactions the API prepares, so it needs a
+wallet client and a little native currency for gas. Nothing is sponsored on this path.
+
 ```ts
-import { GainsClient } from "@gainsnetwork/api";
+import { GainsClient, viemSender } from "@gainsnetwork/api";
+import { createWalletClient, defineChain, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 const agent = privateKeyToAccount(process.env.GAINS_AGENT_KEY as `0x${string}`);
-const client = new GainsClient({ chain: "arbitrum-sepolia", agent });
+const chain = await new GainsClient({ chain: "arbitrum-sepolia" }).signingChain();
+const wallet = createWalletClient({
+  account: agent,
+  chain: defineChain({
+    id: chain.chainId,
+    name: "gains",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: [process.env.RPC_URL!] } },
+  }),
+  transport: http(process.env.RPC_URL!),
+});
+
+const client = new GainsClient({
+  chain: "arbitrum-sepolia",
+  agent,
+  sender: viemSender(wallet),
+});
 
 const markets = await client.markets.list();
 const btc = markets.find((m) => m.symbol === "BTC/USD")!;

@@ -12,6 +12,8 @@ export interface TransactionSender {
 /** The part of a viem `WalletClient` (created with an account and a chain) the SDK relies on. */
 export interface WalletClientLike {
   readonly account: { readonly address: Address } | undefined;
+  /** Present on a client created with a chain; used to refuse a cross-chain broadcast. */
+  readonly chain?: { readonly id: number } | undefined;
   sendTransaction(args: {
     readonly to: Address;
     readonly data: Hex;
@@ -38,6 +40,15 @@ export function viemSender(wallet: WalletClientLike): TransactionSender {
   return {
     address: account.address,
     sendTransaction(transaction) {
+      const walletChainId = wallet.chain?.id;
+      if (walletChainId !== undefined && walletChainId !== transaction.chainId) {
+        throw new Error(
+          `prepared transaction is for chain ${String(transaction.chainId)} but the wallet is on ${String(walletChainId)}`,
+        );
+      }
+      if (Date.now() >= transaction.expiresAt) {
+        throw new Error("prepared transaction has expired; prepare it again before broadcasting");
+      }
       return wallet.sendTransaction({
         to: address(transaction.to),
         data: hex(transaction.data),

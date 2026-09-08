@@ -50,7 +50,13 @@ export type {
   AgentSignerOptions,
   AgentAuthorizationInput,
 } from "./signing.js";
-export { GainsApiError, OrderNotFilledError, FillTimeoutError, ERROR_CODES } from "./errors.js";
+export {
+  GainsApiError,
+  OrderNotFilledError,
+  OrderSubmitReportError,
+  FillTimeoutError,
+  ERROR_CODES,
+} from "./errors.js";
 export type { ErrorCode } from "./errors.js";
 export { canonicalJson } from "./canonicalJson.js";
 export type { RequestOptions } from "./http.js";

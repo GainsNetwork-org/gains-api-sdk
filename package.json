@@ -36,9 +36,7 @@
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
   },
-  "dependencies": {
-    "viem": "2.56.3"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@gains/eslint-config": "file:../eslint-config",
@@ -47,9 +45,13 @@
     "openapi-typescript": "7.13.0",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "viem": "2.56.3"
   },
   "overrides": {
     "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "viem": "^2"
   }
 }
