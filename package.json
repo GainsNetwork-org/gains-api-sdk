@@ -1,6 +1,6 @@
 {
   "name": "@gainsnetwork/api",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript client for the Gains Network trading API: typed REST calls generated from the OpenAPI contract, EIP-712 request signing, order tracking and a WebSocket client.",
   "license": "MIT",
   "type": "module",
