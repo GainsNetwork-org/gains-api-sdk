@@ -1,7 +1,7 @@
-import gains from "@gains/eslint-config";
+import gains from "./eslint.shared.mjs";
 
 export default [
-  { ignores: ["src/generated/**"] },
+  { ignores: ["src/generated/**", "dist/**"] },
   ...gains,
   {
     languageOptions: {

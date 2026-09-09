@@ -1,0 +1,4370 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gains Trading API",
+    "version": "1.0.0",
+    "description": "Native REST and WebSocket API for trading on Gains Network. Resource-oriented, JSON in and out, decimal strings for every price and size, one EIP-712 signing scheme, and an order lifecycle that hides the oracle two-step."
+  },
+  "servers": [
+    {
+      "url": "https://api.gains.trade"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Markets",
+      "description": "Public market data"
+    },
+    {
+      "name": "Account",
+      "description": "Private reads: balances, positions, orders, fills"
+    },
+    {
+      "name": "Orders",
+      "description": "Place, update and cancel orders"
+    },
+    {
+      "name": "Positions",
+      "description": "Close and manage open positions"
+    },
+    {
+      "name": "Agents",
+      "description": "Non-custodial agent authorisation"
+    },
+    {
+      "name": "System",
+      "description": "Health"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "AgentSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Gains-Signature",
+        "description": "EIP-712 signature by an authorised agent over {method, path, body, timestamp, nonce}, sent with X-Gains-Agent, X-Gains-Timestamp and X-Gains-Nonce."
+      },
+      "ApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Gains-Api-Key",
+        "description": "Read-only key issued by POST /v1/{chain}/api-keys."
+      }
+    },
+    "schemas": {
+      "ChainInfo": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "string",
+            "enum": [
+              "arbitrum",
+              "base",
+              "polygon",
+              "megaeth",
+              "arbitrum-sepolia"
+            ],
+            "example": "arbitrum"
+          },
+          "chainId": {
+            "type": "integer"
+          },
+          "diamond": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523",
+            "description": "Gains Diamond, the EIP-712 verifying contract of this chain."
+          },
+          "relayer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523",
+            "description": "Hyperliquid facade relayer, the only sponsored path; null when the deployment serves the facade read-only. Native agents broadcast their own transactions."
+          },
+          "testnet": {
+            "type": "boolean"
+          },
+          "signing": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "chainId": {
+                    "type": "integer"
+                  },
+                  "verifyingContract": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+                  }
+                },
+                "required": [
+                  "name",
+                  "version",
+                  "chainId",
+                  "verifyingContract"
+                ]
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ]
+                }
+              },
+              "emptyBodyHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "fields",
+              "emptyBodyHash"
+            ]
+          }
+        },
+        "required": [
+          "chain",
+          "chainId",
+          "diamond",
+          "relayer",
+          "testnet",
+          "signing"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_ERROR",
+              "UNAUTHENTICATED",
+              "INVALID_SIGNATURE",
+              "TIMESTAMP_OUT_OF_WINDOW",
+              "NONCE_REUSED",
+              "AGENT_UNKNOWN",
+              "API_KEY_UNKNOWN",
+              "AGENT_NOT_DELEGATED",
+              "AGENT_EXPIRED",
+              "AGENT_REVOKED",
+              "SCOPE_READ_ONLY",
+              "SCOPE_MARKET_NOT_ALLOWED",
+              "SCOPE_LEVERAGE_EXCEEDED",
+              "SCOPE_SPEND_CAP_EXCEEDED",
+              "TRADER_MISMATCH",
+              "CHAIN_NOT_FOUND",
+              "CHAIN_READ_ONLY",
+              "MARKET_NOT_FOUND",
+              "ORDER_NOT_FOUND",
+              "POSITION_NOT_FOUND",
+              "AGENT_NOT_FOUND",
+              "IDEMPOTENCY_CONFLICT",
+              "ORDER_NOT_MODIFIABLE",
+              "PRECISION_ERROR",
+              "LEVERAGE_OUT_OF_RANGE",
+              "SIZE_BELOW_MINIMUM",
+              "MARKET_CLOSED",
+              "COLLATERAL_NOT_SUPPORTED",
+              "SIMULATION_REVERTED",
+              "SUBMISSION_MISMATCH",
+              "UNSUPPORTED",
+              "RATE_LIMITED",
+              "INTERNAL",
+              "UPSTREAM_UNAVAILABLE",
+              "NOT_READY"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "Market": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "pairIndex": {
+            "type": "integer",
+            "example": 0,
+            "description": "On-chain pair index. Equals the Hyperliquid asset id on the facade."
+          },
+          "base": {
+            "type": "string",
+            "example": "BTC"
+          },
+          "quote": {
+            "type": "string",
+            "example": "USD"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "crypto",
+              "forex",
+              "stocks",
+              "indices",
+              "commodities"
+            ]
+          },
+          "groupIndex": {
+            "type": "integer"
+          },
+          "feeIndex": {
+            "type": "integer"
+          },
+          "isOpen": {
+            "type": "boolean"
+          },
+          "minLeverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "maxLeverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "minCollateralUsd": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "minPositionUsd": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "pricePrecision": {
+            "type": "integer",
+            "description": "Maximum decimals accepted for prices on this market."
+          },
+          "sizePrecision": {
+            "type": "integer",
+            "description": "Maximum decimals accepted for sizes on this market."
+          },
+          "spreadRate": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Fixed spread as a fraction of price (0.0004 = 0.04%)."
+          },
+          "fees": {
+            "type": "object",
+            "properties": {
+              "openFeeRate": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "closeFeeRate": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "minPositionSizeUsd": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              }
+            },
+            "required": [
+              "openFeeRate",
+              "closeFeeRate",
+              "minPositionSizeUsd"
+            ]
+          },
+          "funding": {
+            "type": "object",
+            "properties": {
+              "fundingRateLongHourly": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Percent per hour paid by longs (negative means received)."
+              },
+              "fundingRateShortHourly": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "borrowingRateHourly": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "openInterestLongUsd": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "openInterestShortUsd": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              },
+              "skewUsd": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              }
+            },
+            "required": [
+              "fundingRateLongHourly",
+              "fundingRateShortHourly",
+              "borrowingRateHourly",
+              "openInterestLongUsd",
+              "openInterestShortUsd",
+              "skewUsd"
+            ]
+          },
+          "onlyIsolated": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "collaterals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketCollateral"
+            }
+          }
+        },
+        "required": [
+          "symbol",
+          "pairIndex",
+          "base",
+          "quote",
+          "group",
+          "groupIndex",
+          "feeIndex",
+          "isOpen",
+          "minLeverage",
+          "maxLeverage",
+          "minCollateralUsd",
+          "minPositionUsd",
+          "pricePrecision",
+          "sizePrecision",
+          "spreadRate",
+          "fees",
+          "funding",
+          "onlyIsolated",
+          "collaterals"
+        ]
+      },
+      "MarketCollateral": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "example": "USDC"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "decimals": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "symbol",
+          "index",
+          "address",
+          "decimals"
+        ]
+      },
+      "OrderBook": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "markPrice": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "bids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookLevel"
+            }
+          },
+          "asks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookLevel"
+            }
+          },
+          "timestamp": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "market",
+          "markPrice",
+          "bids",
+          "asks",
+          "timestamp"
+        ]
+      },
+      "BookLevel": {
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "sizeUsd": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "cumulativeUsd": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          }
+        },
+        "required": [
+          "price",
+          "size",
+          "sizeUsd",
+          "cumulativeUsd"
+        ]
+      },
+      "Candle": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "integer",
+            "description": "Candle open time, epoch milliseconds."
+          },
+          "open": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "high": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "low": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "close": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          }
+        },
+        "required": [
+          "time",
+          "open",
+          "high",
+          "low",
+          "close"
+        ]
+      },
+      "RecentTrade": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "sizeUsd": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "txHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "market",
+          "price",
+          "sizeUsd",
+          "side",
+          "action",
+          "timestamp",
+          "txHash"
+        ]
+      },
+      "Price": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "mark": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "index": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "market",
+          "mark",
+          "index",
+          "updatedAt"
+        ]
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "balances": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "collateral": {
+                  "type": "string"
+                },
+                "balance": {
+                  "type": "string",
+                  "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                  "example": "0.5",
+                  "description": "Decimal number encoded as a string to preserve precision."
+                },
+                "allowance": {
+                  "type": "string",
+                  "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                  "example": "0.5",
+                  "description": "Decimal number encoded as a string to preserve precision."
+                }
+              },
+              "required": [
+                "collateral",
+                "balance",
+                "allowance"
+              ]
+            }
+          },
+          "feeTierMultiplier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "referrer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Agent"
+            }
+          }
+        },
+        "required": [
+          "address",
+          "balances",
+          "feeTierMultiplier",
+          "referrer",
+          "agents"
+        ]
+      },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "trader": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AgentScope"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "self",
+              "relayed"
+            ],
+            "description": "self: the agent signs and broadcasts as the trader's delegate. relayed: the Hyperliquid facade relayer is the delegate."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_delegation",
+              "active",
+              "revoked",
+              "expired"
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent",
+          "trader",
+          "name",
+          "scope",
+          "mode",
+          "status",
+          "createdAt"
+        ]
+      },
+      "AgentScope": {
+        "type": "object",
+        "properties": {
+          "markets": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "all"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+                  "example": "BTC/USD",
+                  "description": "Gains market symbol, `<base>/<quote>`."
+                }
+              }
+            ]
+          },
+          "maxLeverage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "dailySpendCapUsd": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Epoch milliseconds, or null for no expiry."
+          },
+          "permissions": {
+            "type": "string",
+            "enum": [
+              "trade",
+              "read"
+            ]
+          }
+        },
+        "required": [
+          "markets",
+          "maxLeverage",
+          "dailySpendCapUsd",
+          "expiresAt",
+          "permissions"
+        ]
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[1-9]\\d{0,15}$",
+            "example": "5316911983139663",
+            "description": "Order id. A decimal string that fits in a 53-bit integer."
+          },
+          "trader": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "pairIndex": {
+            "type": "integer"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateralSymbol": {
+            "type": "string"
+          },
+          "leverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "entryPrice": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "markPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "liquidationPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "unrealizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "unrealizedPnlPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "fundingFee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "borrowingFee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "sl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "tp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "openedAtBlock": {
+            "type": "integer"
+          },
+          "marginMode": {
+            "type": "string",
+            "enum": [
+              "isolated"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "trader",
+          "market",
+          "pairIndex",
+          "side",
+          "size",
+          "collateral",
+          "collateralSymbol",
+          "leverage",
+          "entryPrice",
+          "markPrice",
+          "liquidationPrice",
+          "unrealizedPnl",
+          "unrealizedPnlPercent",
+          "fundingFee",
+          "borrowingFee",
+          "sl",
+          "tp",
+          "openedAtBlock",
+          "marginMode"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[1-9]\\d{0,15}$",
+            "example": "5316911983139663",
+            "description": "Order id. A decimal string that fits in a 53-bit integer."
+          },
+          "trader": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "market",
+              "limit",
+              "stop"
+            ]
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "leverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "string"
+          },
+          "sl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "tp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "reduceOnly": {
+            "type": "boolean"
+          },
+          "slippage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "pending",
+              "open",
+              "filled",
+              "rejected",
+              "timed_out",
+              "canceled",
+              "expired"
+            ]
+          },
+          "txHash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123"
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "For prepared orders, when the prepared transaction stops being valid."
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fill"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "PAUSED",
+              "MARKET_CLOSED",
+              "SLIPPAGE",
+              "TP_REACHED",
+              "SL_REACHED",
+              "EXPOSURE_LIMITS",
+              "PRICE_IMPACT",
+              "MAX_LEVERAGE",
+              "NO_TRADE",
+              "WRONG_TRADE",
+              "NOT_HIT",
+              "LIQ_REACHED",
+              "OTHER",
+              null
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "trader",
+          "market",
+          "side",
+          "type",
+          "size",
+          "price",
+          "leverage",
+          "collateral",
+          "sl",
+          "tp",
+          "reduceOnly",
+          "slippage",
+          "clientId",
+          "status",
+          "txHash",
+          "expiresAt",
+          "fill",
+          "reason",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Fill": {
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "feeCollateral": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "txHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123"
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "positionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[1-9]\\d{0,15}$",
+            "example": "5316911983139663",
+            "description": "Order id. A decimal string that fits in a 53-bit integer."
+          }
+        },
+        "required": [
+          "price",
+          "size",
+          "collateral",
+          "feeCollateral",
+          "txHash",
+          "timestamp",
+          "positionId"
+        ]
+      },
+      "OrderPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "FillPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FillHistoryEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "FillHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "market": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "action": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "leverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "pnl": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "txHash": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "string",
+            "pattern": "^[1-9]\\d{0,15}$",
+            "example": "5316911983139663",
+            "description": "Order id. A decimal string that fits in a 53-bit integer."
+          }
+        },
+        "required": [
+          "id",
+          "market",
+          "action",
+          "side",
+          "price",
+          "size",
+          "collateral",
+          "leverage",
+          "pnl",
+          "timestamp",
+          "txHash",
+          "positionId"
+        ]
+      },
+      "PreparedOrder": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          },
+          "transaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreparedTransaction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when nothing has to reach the chain for this call."
+          }
+        },
+        "required": [
+          "order",
+          "transaction"
+        ]
+      },
+      "PreparedTransaction": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123"
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "0"
+            ]
+          },
+          "chainId": {
+            "type": "integer"
+          },
+          "gas": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gas estimate from the agent's account, null when it could not be estimated."
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "Unix ms; re-prepare after this."
+          }
+        },
+        "required": [
+          "to",
+          "data",
+          "value",
+          "chainId",
+          "gas",
+          "expiresAt"
+        ],
+        "description": "A transaction for the agent to sign and broadcast: the Diamond as `to`, zero value, no sender or nonce (the wallet fills them)."
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+            "example": "BTC/USD",
+            "description": "Gains market symbol, `<base>/<quote>`."
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "market",
+              "limit",
+              "stop"
+            ]
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Position size in base asset units."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Trigger price for limit/stop orders; expected price for market orders (defaults to the mark price)."
+          },
+          "leverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "string",
+            "description": "Collateral symbol. Defaults to USDC where the chain lists it, otherwise to the chain's single active collateral."
+          },
+          "sl": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "tp": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "reduceOnly": {
+            "type": "boolean",
+            "description": "Defaults to false."
+          },
+          "slippage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Maximum slippage in percent. Defaults to 1."
+          },
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "market",
+          "side",
+          "type",
+          "size",
+          "leverage"
+        ]
+      },
+      "SubmitOrderBody": {
+        "type": "object",
+        "properties": {
+          "txHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123",
+            "description": "Hash of the broadcast prepared transaction."
+          }
+        },
+        "required": [
+          "txHash"
+        ]
+      },
+      "UpdateOrderRequest": {
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "sl": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "tp": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "slippage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          }
+        }
+      },
+      "ClosePositionRequest": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Base asset amount to close. Omit for a full close."
+          },
+          "slippage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          }
+        }
+      },
+      "PreparedPosition": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/PreparedTransaction"
+          }
+        },
+        "required": [
+          "position",
+          "transaction"
+        ]
+      },
+      "UpdatePositionRequest": {
+        "type": "object",
+        "properties": {
+          "sl": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "tp": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "leverage": {
+            "type": "string",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "example": "0.5",
+            "description": "Decimal number encoded as a string to preserve precision."
+          },
+          "collateral": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                "example": "0.5",
+                "description": "Decimal number encoded as a string to preserve precision."
+              }
+            },
+            "required": [
+              "action",
+              "amount"
+            ],
+            "description": "Add or remove collateral while keeping the position size (adjusts leverage)."
+          }
+        }
+      },
+      "TransactionRequest": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "to": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123"
+          },
+          "chainId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to",
+          "data",
+          "chainId"
+        ]
+      },
+      "CreateAgentRequest": {
+        "type": "object",
+        "properties": {
+          "trader": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AgentScope"
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123",
+            "description": "EIP-712 `AgentAuthorization` signature by the trader's master wallet."
+          }
+        },
+        "required": [
+          "trader",
+          "agent",
+          "scope",
+          "timestamp",
+          "signature"
+        ]
+      },
+      "RevokeAgentRequest": {
+        "type": "object",
+        "properties": {
+          "trader": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]*$",
+            "example": "0xabc123",
+            "description": "EIP-712 `AgentRevocation` signature by the trader's master wallet."
+          }
+        },
+        "required": [
+          "trader",
+          "timestamp",
+          "signature"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "tags": [
+          "System"
+        ],
+        "summary": "Liveness",
+        "responses": {
+          "200": {
+            "description": "Alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "chains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "arbitrum",
+                          "base",
+                          "polygon",
+                          "megaeth",
+                          "arbitrum-sepolia"
+                        ],
+                        "example": "arbitrum"
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "chains"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "ready",
+        "tags": [
+          "System"
+        ],
+        "summary": "Readiness per chain",
+        "responses": {
+          "200": {
+            "description": "Every chain is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "chains": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "relayer": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "ready",
+                          "relayer"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ready",
+                    "chains"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one chain is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "chains": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "relayer": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "ready",
+                          "relayer"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ready",
+                    "chains"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}": {
+      "get": {
+        "operationId": "getChainInfo",
+        "tags": [
+          "System"
+        ],
+        "summary": "Chain identity and signing domain",
+        "description": "Everything a client needs to sign requests for this chain without hard-coding addresses.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chain info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets": {
+      "get": {
+        "operationId": "listMarkets",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "List markets",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All markets on this chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Market"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets/{symbol}": {
+      "get": {
+        "operationId": "getMarket",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Get one market",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "BTC-USD",
+              "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted."
+            },
+            "required": true,
+            "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted.",
+            "name": "symbol",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The market",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Market"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets/{symbol}/book": {
+      "get": {
+        "operationId": "getOrderBook",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Virtual order book",
+        "description": "Gains has no resting order book. Levels are derived from the on-chain depth bands: the size at each level is the liquidity available at that price impact.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "BTC-USD",
+              "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted."
+            },
+            "required": true,
+            "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted.",
+            "name": "symbol",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 20
+            },
+            "required": false,
+            "name": "levels",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bids and asks around the mark price",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderBook"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets/{symbol}/candles": {
+      "get": {
+        "operationId": "getCandles",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Historical candles",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "BTC-USD",
+              "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted."
+            },
+            "required": true,
+            "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted.",
+            "name": "symbol",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "1d"
+              ],
+              "default": "1h"
+            },
+            "required": false,
+            "name": "interval",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Start, epoch milliseconds"
+            },
+            "required": false,
+            "description": "Start, epoch milliseconds",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "End, epoch milliseconds"
+            },
+            "required": false,
+            "description": "End, epoch milliseconds",
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Candles, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Candle"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets/{symbol}/trades": {
+      "get": {
+        "operationId": "getRecentTrades",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Recent executed trades",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "BTC-USD",
+              "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted."
+            },
+            "required": true,
+            "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted.",
+            "name": "symbol",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Most recent first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RecentTrade"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/markets/{symbol}/funding": {
+      "get": {
+        "operationId": "getFunding",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Current funding and borrowing rates",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "BTC-USD",
+              "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted."
+            },
+            "required": true,
+            "description": "Market symbol. `BTC-USD` and `BTC%2FUSD` are both accepted.",
+            "name": "symbol",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hourly rates and open interest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fundingRateLongHourly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Percent per hour paid by longs (negative means received)."
+                    },
+                    "fundingRateShortHourly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Decimal number encoded as a string to preserve precision."
+                    },
+                    "borrowingRateHourly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Decimal number encoded as a string to preserve precision."
+                    },
+                    "openInterestLongUsd": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Decimal number encoded as a string to preserve precision."
+                    },
+                    "openInterestShortUsd": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Decimal number encoded as a string to preserve precision."
+                    },
+                    "skewUsd": {
+                      "type": "string",
+                      "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+                      "example": "0.5",
+                      "description": "Decimal number encoded as a string to preserve precision."
+                    },
+                    "market": {
+                      "type": "string",
+                      "pattern": "^[A-Z0-9.]{1,15}\\/[A-Z0-9]{1,10}$",
+                      "example": "BTC/USD",
+                      "description": "Gains market symbol, `<base>/<quote>`."
+                    }
+                  },
+                  "required": [
+                    "fundingRateLongHourly",
+                    "fundingRateShortHourly",
+                    "borrowingRateHourly",
+                    "openInterestLongUsd",
+                    "openInterestShortUsd",
+                    "skewUsd",
+                    "market"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/prices": {
+      "get": {
+        "operationId": "getPrices",
+        "tags": [
+          "Markets"
+        ],
+        "summary": "Mark and index price of every market",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest prices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Price"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/account/{address}": {
+      "get": {
+        "operationId": "getAccount",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Balances, fee tier and agents",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/account/{address}/positions": {
+      "get": {
+        "operationId": "listPositions",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Open positions",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open positions with live PnL and liquidation price",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Position"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/account/{address}/orders": {
+      "get": {
+        "operationId": "listOpenOrders",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Open orders",
+        "description": "Pending market requests and resting limit/stop orders.",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Order"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/account/{address}/orders/history": {
+      "get": {
+        "operationId": "listOrderHistory",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Orders placed through the API, newest first",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from the previous page."
+            },
+            "required": false,
+            "description": "Opaque cursor from the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "example": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/account/{address}/fills": {
+      "get": {
+        "operationId": "listFills",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Fill history",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from the previous page."
+            },
+            "required": false,
+            "description": "Opaque cursor from the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "example": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of fills, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FillPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Order lifecycle status",
+        "security": [
+          {
+            "AgentSignature": []
+          },
+          {
+            "ApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateOrder",
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Update a resting limit or stop order",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Fields to change",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelOrder",
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Cancel a resting order, or reclaim a timed-out market request",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The canceled order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedOrder"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Place an order",
+        "description": "Validates the order, checks the agent scope, simulates it from the agent and returns the transaction the agent signs and broadcasts (`transaction`) together with the order in `prepared` state and its final id. After broadcasting, `POST /orders/{id}/submit` with the hash; the order becomes `pending` (market) or `open` (limit, stop). The API also watches the chain, so a prepared order whose transaction lands moves on without the submit call.",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "The order",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order, with its lifecycle id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/orders/{id}/submit": {
+      "post": {
+        "operationId": "submitOrder",
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Report the broadcast transaction of a prepared order",
+        "description": "Records the transaction hash the agent broadcast for a prepared order. When the receipt is already available the order moves to `pending` or `open` (and is re-keyed if the Diamond assigned another index); otherwise it stays `prepared` with the hash until the chain watcher sees it.",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "The transaction hash",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitOrderBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order after the submission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/positions/{id}/close": {
+      "post": {
+        "operationId": "closePosition",
+        "tags": [
+          "Positions"
+        ],
+        "summary": "Close a position at market",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Optional partial size and slippage",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClosePositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The close request, `pending` until the oracle fills it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/positions/{id}": {
+      "patch": {
+        "operationId": "updatePosition",
+        "tags": [
+          "Positions"
+        ],
+        "summary": "Update stop loss, take profit, leverage or collateral",
+        "security": [
+          {
+            "AgentSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "5316911983139663"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Fields to change",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparedPosition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credentials valid but not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain rule rejected the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/agents": {
+      "post": {
+        "operationId": "createAgent",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Authorise an agent",
+        "description": "Registers the agent and its scope, signed by the trader's master wallet (EIP-712 `AgentAuthorization`). The response carries the `setTradingDelegate` transaction the master wallet must send; the agent becomes `active` once it is mined.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Agent, scope and master signature",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The agent and the transaction to send",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agent": {
+                      "$ref": "#/components/schemas/Agent"
+                    },
+                    "delegationTx": {
+                      "$ref": "#/components/schemas/TransactionRequest"
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "delegationTx"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/agents/{address}": {
+      "get": {
+        "operationId": "getAgent",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Agent status and delegation transaction",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agent": {
+                      "$ref": "#/components/schemas/Agent"
+                    },
+                    "delegationTx": {
+                      "$ref": "#/components/schemas/TransactionRequest"
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "delegationTx"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeAgent",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Revoke an agent",
+        "description": "Disables the agent immediately in the API and returns the `removeTradingDelegate` transaction for the master wallet.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+            },
+            "required": true,
+            "name": "address",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Master signature",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revocationTx": {
+                      "$ref": "#/components/schemas/TransactionRequest"
+                    }
+                  },
+                  "required": [
+                    "revocationTx"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/{chain}/api-keys": {
+      "post": {
+        "operationId": "issueApiKey",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Issue a read-only API key",
+        "description": "Signed by the master wallet (EIP-712 `ApiKeyIssue`). The key is returned once and never stored in clear.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Label and master signature",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "trader": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "timestamp": {
+                    "type": "integer"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]*$",
+                    "example": "0xabc123"
+                  }
+                },
+                "required": [
+                  "trader",
+                  "label",
+                  "timestamp",
+                  "signature"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiKey": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "trader": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "example": "0x73b3A111C5BCCf9086c97B96e0AbAad69Dc4f523"
+                    }
+                  },
+                  "required": [
+                    "apiKey",
+                    "label",
+                    "trader"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hl/{chain}/info": {
+      "post": {
+        "operationId": "hlInfo",
+        "tags": [
+          "Hyperliquid compatibility"
+        ],
+        "summary": "Hyperliquid-shaped /info",
+        "description": "Accepts the Hyperliquid `POST /info` request types (`meta`, `metaAndAssetCtxs`, `allMids`, `l2Book`, `candleSnapshot`, `clearinghouseState`, `openOrders`, `frontendOpenOrders`, `userFills`, `userFillsByTime`, `orderStatus`, `historicalOrders`, `userFunding`, `fundingHistory`, `userRateLimit`, `userFees`, `referral`, `spotMeta`, `spotClearinghouseState`, `subAccounts`, `vaultDetails`) and answers with Hyperliquid's shapes. Asset id `a` equals the Gains `pairIndex`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Hyperliquid info request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Hyperliquid-shaped response, or `null` for an unknown coin",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown `type` or malformed request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hl/{chain}/exchange": {
+      "post": {
+        "operationId": "hlExchange",
+        "tags": [
+          "Hyperliquid compatibility"
+        ],
+        "summary": "Hyperliquid-shaped /exchange",
+        "description": "Accepts the Hyperliquid `POST /exchange` envelope `{action, nonce, signature, vaultAddress?, expiresAfter?}` with Hyperliquid's exact signing (msgpack action hash, phantom agent EIP-712 on chain id 1337; user-signed actions on the `HyperliquidSignTransaction` domain). The signing agent must be a Gains agent: one `approveAgent` plus one `setTradingDelegate` transaction by the master wallet. Custody actions (`usdSend`, `withdraw3`, `spotSend`, vaults, sub-accounts) return an `err` envelope: funds never leave the wallet.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "arbitrum",
+                "base",
+                "polygon",
+                "megaeth",
+                "arbitrum-sepolia"
+              ],
+              "example": "arbitrum"
+            },
+            "required": true,
+            "name": "chain",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Hyperliquid exchange envelope",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`{status: \"ok\" | \"err\", response}`; order statuses add `{pending: {oid, txHash}}` for the oracle step",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed envelope",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

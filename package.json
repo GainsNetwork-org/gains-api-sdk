@@ -19,7 +19,10 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "engines": {
     "node": ">=20"
@@ -27,7 +30,7 @@
   "scripts": {
     "build": "tsup",
     "clean": "rm -rf ./dist",
-    "generate": "openapi-typescript ../../apps/trading-api/openapi/gains-trading-api.v1.json -o src/generated/schema.ts --alphabetize --root-types",
+    "generate": "openapi-typescript ./openapi.v1.json -o src/generated/schema.ts --alphabetize --root-types",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "format": "biome format --write .",
@@ -39,19 +42,25 @@
   "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@gains/eslint-config": "file:../eslint-config",
     "@types/node": "22.20.1",
     "eslint": "9.39.5",
+    "eslint-plugin-jsdoc": "63.0.13",
+    "eslint-plugin-tsdoc": "0.5.2",
     "openapi-typescript": "7.13.0",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vitest": "4.1.10",
-    "viem": "2.56.3"
+    "typescript-eslint": "8.56.0",
+    "viem": "2.56.3",
+    "vitest": "4.1.10"
   },
   "overrides": {
     "vitest": "4.1.10"
   },
   "peerDependencies": {
     "viem": "^2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GainsNetwork-org/gains-api-sdk.git"
   }
 }
